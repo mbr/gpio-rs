@@ -1,10 +1,8 @@
-#![feature(core_intrinsics)]
-
 extern crate core;
 extern crate libc;
 extern crate nix;
 
-use core::intrinsics::{volatile_load, volatile_store};
+use core::ptr::{read_volatile, write_volatile};
 use nix::sys::mman;
 use std::{fs, io};
 use std::io::Write;
@@ -130,7 +128,7 @@ impl RasPi1GpioOut {
 
         let dir_addr = RP1_GPIO_BASE + (n / 10) * 4;
         // println!("volatile load: {:#x}", dir_addr);
-        let mut tmp = volatile_load(dir_addr as *const u32);
+        let mut tmp = read_volatile(dir_addr as *const u32);
         // println!("result: {:#x}", tmp);
         // FIXME: 0-out alternate function
 
@@ -140,7 +138,7 @@ impl RasPi1GpioOut {
         // add output bit
         tmp |= 1 << ((n%10)*3);
         // println!("volatile store: {:#x} @ {:#x}", tmp, dir_addr);
-        volatile_store(dir_addr as *mut u32, tmp);
+        write_volatile(dir_addr as *mut u32, tmp);
 
         RasPi1GpioOut(num)
     }
@@ -164,7 +162,7 @@ impl GpioOut for RasPi1GpioOut {
 
         unsafe {
             // println!("set v store: {:#x} @ {:#x}", 1 << bit_num, dest_addr);
-            volatile_store(dest_addr as *mut u32, 1 << bit_num)
+            write_volatile(dest_addr as *mut u32, 1 << bit_num)
         };
         true
     }
