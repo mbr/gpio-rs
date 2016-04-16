@@ -29,6 +29,16 @@ impl From<u8> for GpioValue {
 pub trait GpioOut {
     fn set_value<T: Into<GpioValue> + Copy>(&mut self, value: T)
     -> bool;
+
+    #[inline(always)]
+    fn low(&mut self) -> bool {
+        self.set_value(GpioValue::Low)
+    }
+
+    #[inline(always)]
+    fn high(&mut self) -> bool {
+        self.set_value(GpioValue::High)
+    }
 }
 
 #[derive(Debug)]
