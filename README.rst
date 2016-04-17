@@ -24,7 +24,6 @@ These include:
 * `cylus <https://github.com/Vikaton/cylus>`_ Documentation is dead, does a few
   questionable things like unwrapping()
 * `cupi <https://github.com/cuprumpi/cupi>`_ Most comprehensive GPIO library,
-  includes almost all features planned for gpio. Curiously, does not use
-  volatile?
+  includes almost all features planned for gpio. Does not use volatile.
 
-  TODO: Check if slower due to using syscalls
+  TODO: Benchmark
