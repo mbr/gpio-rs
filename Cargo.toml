@@ -4,6 +4,4 @@ version = "0.2.0"
 authors = ["Marc Brinkmann <git@marcbrinkmann.de>"]
 
 [dependencies]
-nix = "^0.5.0"
-libc = "^0.2.10"
 

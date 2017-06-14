@@ -7,10 +7,6 @@
 //! The core interface is defined using `GpioValue` and the `GpioOut` and
 //! `GpioIn` traits. Concrete implementations are available in submodules.
 
-extern crate core;
-extern crate libc;
-extern crate nix;
-
 pub mod sysfs;
 
 #[derive(Debug, Copy, Clone)]
