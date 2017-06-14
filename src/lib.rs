@@ -22,13 +22,16 @@ impl From<bool> for GpioValue {
 
 impl From<u8> for GpioValue {
     fn from(val: u8) -> GpioValue {
-        if val != 0 { GpioValue::High } else { GpioValue::Low }
+        if val != 0 {
+            GpioValue::High
+        } else {
+            GpioValue::Low
+        }
     }
 }
 
 pub trait GpioOut {
-    fn set_value<T: Into<GpioValue> + Copy>(&mut self, value: T)
-    -> bool;
+    fn set_value<T: Into<GpioValue> + Copy>(&mut self, value: T) -> bool;
 
     #[inline(always)]
     fn low(&mut self) -> bool {
@@ -42,7 +45,7 @@ pub trait GpioOut {
 }
 
 #[derive(Debug)]
-pub struct SysFsGpioOut{
+pub struct SysFsGpioOut {
     gpio_num: u16,
     sysfp: fs::File,
 }
@@ -51,42 +54,35 @@ impl SysFsGpioOut {
     pub fn new(gpio_num: u16) -> io::Result<SysFsGpioOut> {
         // export port first
         {
-            let mut export_fp = try!(
-                fs::File::create("/sys/class/gpio/export")
-            );
+            let mut export_fp = try!(fs::File::create("/sys/class/gpio/export"));
             try!(write!(export_fp, "{}", gpio_num));
         }
 
         {
-            let mut output_fp = try!(fs::File::create(
-                format!("/sys/class/gpio/gpio{}/direction", gpio_num)
-            ));
+            let mut output_fp = try!(fs::File::create(format!("/sys/class/gpio/gpio{}/direction",
+                                                              gpio_num)));
             try!(write!(output_fp, "out"));
         }
 
         // ensure we're using 0 as low
         {
-            let mut al_fp = try!(fs::File::create(
-                format!("/sys/class/gpio/gpio{}/active_low", gpio_num)
-            ));
+            let mut al_fp = try!(fs::File::create(format!("/sys/class/gpio/gpio{}/active_low",
+                                                          gpio_num)));
             try!(write!(al_fp, "0"));
         }
 
-        let sysfp = try!(fs::File::create(
-            format!("/sys/class/gpio/gpio{}/value", gpio_num)
-        ));
+        let sysfp = try!(fs::File::create(format!("/sys/class/gpio/gpio{}/value", gpio_num)));
 
-        Ok(SysFsGpioOut{
-            gpio_num: gpio_num,
-            sysfp: sysfp
-        })
+        Ok(SysFsGpioOut {
+               gpio_num: gpio_num,
+               sysfp: sysfp,
+           })
     }
 
     pub fn force_new(gpio_num: u16) -> io::Result<SysFsGpioOut> {
         // unexport first
         {
-            let mut unexport_fp = try!(
-                fs::File::create("/sys/class/gpio/unexport"));
+            let mut unexport_fp = try!(fs::File::create("/sys/class/gpio/unexport"));
 
             // ignore result from write
             write!(unexport_fp, "{}\n", gpio_num).ok();
@@ -112,12 +108,14 @@ impl GpioOut for SysFsGpioOut {
     fn set_value<T: Into<GpioValue> + Copy>(&mut self, value: T) -> bool {
         let val: GpioValue = value.into();
 
-        if let Ok(_) = write!(self.sysfp, "{}", match val {
-            GpioValue::Low => "0",
-            GpioValue::High => "1",
-        }) {
+        if let Ok(_) = write!(self.sysfp,
+                              "{}",
+                              match val {
+                                  GpioValue::Low => "0",
+                                  GpioValue::High => "1",
+                              }) {
             true
-        } else{
+        } else {
             false
         }
     }
@@ -143,10 +141,10 @@ impl RasPi1GpioOut {
         // FIXME: 0-out alternate function
 
         // zero out alternative use flags
-        tmp &= !(7 << ((n%10)*3));
+        tmp &= !(7 << ((n % 10) * 3));
 
         // add output bit
-        tmp |= 1 << ((n%10)*3);
+        tmp |= 1 << ((n % 10) * 3);
         // println!("volatile store: {:#x} @ {:#x}", tmp, dir_addr);
         write_volatile(dir_addr as *mut u32, tmp);
 
@@ -182,7 +180,11 @@ impl GpioOut for RasPi1GpioOut {
 pub fn init_rp1_gpio() {
     // FIXME: this may need O_SYNC as well
     // FIXME: remove unwrap
-    let mem = fs::OpenOptions::new().read(true).write(true).open("/dev/mem").unwrap();
+    let mem = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/mem")
+        .unwrap();
 
     let fd = mem.as_raw_fd();
     println!("/dev/mem fd: {}", fd);
@@ -194,5 +196,6 @@ pub fn init_rp1_gpio() {
                mman::MAP_SHARED | mman::MAP_FIXED,
                fd,
                RP1_GPIO_BASE as i64,  // FIXME: i64/i32 is platform-dependant
-              ).unwrap();
+              )
+            .unwrap();
 }
