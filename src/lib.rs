@@ -34,12 +34,12 @@ pub trait GpioOut {
     fn set_value<T: Into<GpioValue> + Copy>(&mut self, value: T) -> bool;
 
     #[inline(always)]
-    fn low(&mut self) -> bool {
+    fn set_low(&mut self) -> bool {
         self.set_value(GpioValue::Low)
     }
 
     #[inline(always)]
-    fn high(&mut self) -> bool {
+    fn set_high(&mut self) -> bool {
         self.set_value(GpioValue::High)
     }
 }
