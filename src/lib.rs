@@ -1,3 +1,12 @@
+//! GPIO interface
+//!
+//! The GPIO crate allows easy and fast access to GPIO pins. It tries to have
+//! an ergonomic interface while being as fast as possible, to enable
+//! bitbanging requiring fast switching, as well as simple applications.
+//!
+//! The core interface is defined using `GpioValue` and the `GpioOut` and
+//! `GpioIn` traits. Concrete implementations are available in submodules.
+
 extern crate core;
 extern crate libc;
 extern crate nix;
