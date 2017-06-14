@@ -7,6 +7,11 @@
 //!
 //! The core interface is defined using `GpioValue` and the `GpioOut` and
 //! `GpioIn` traits. Concrete implementations are available in submodules.
+//!
+//! ### TODO
+//!
+//! * `GpioInput` trait
+//! * `/dev/mem` interface
 
 pub mod sysfs;
 
