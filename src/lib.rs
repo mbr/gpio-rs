@@ -15,6 +15,7 @@
 
 pub mod sysfs;
 
+/// Value read from or written to a GPIO port.
 #[derive(Debug, Copy, Clone)]
 pub enum GpioValue {
     Low,
@@ -37,6 +38,7 @@ impl From<u8> for GpioValue {
     }
 }
 
+/// Support sending `GPIOValue`s
 pub trait GpioOut {
     #[inline(always)]
     fn set_value<T: Into<GpioValue> + Copy>(&mut self, value: T) -> bool {

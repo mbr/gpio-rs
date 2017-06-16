@@ -7,6 +7,7 @@ use std::{fs, io};
 use std::io::Write;
 use super::GpioOut;
 
+/// `/sys`-fs based GPIO output
 #[derive(Debug)]
 pub struct SysFsGpioOutput {
     gpio_num: u16,
