@@ -40,8 +40,10 @@ impl From<u8> for GpioValue {
 
 /// Support sending `GPIOValue`s
 pub trait GpioOut {
+    type Error;
+
     #[inline(always)]
-    fn set_value<T: Into<GpioValue> + Copy>(&mut self, value: T) -> bool {
+    fn set_value<T: Into<GpioValue> + Copy>(&mut self, value: T) -> Result<(), Self::Error> {
         match value.into() {
             GpioValue::High => self.set_high(),
             GpioValue::Low => self.set_low(),
@@ -49,8 +51,8 @@ pub trait GpioOut {
     }
 
     #[inline(always)]
-    fn set_low(&mut self) -> bool;
+    fn set_low(&mut self) -> Result<(), Self::Error>;
 
     #[inline(always)]
-    fn set_high(&mut self) -> bool;
+    fn set_high(&mut self) -> Result<(), Self::Error>;
 }

@@ -67,13 +67,15 @@ impl Drop for SysFsGpioOutput {
 }
 
 impl GpioOut for SysFsGpioOutput {
+    type Error = io::Error;
+
     #[inline(always)]
-    fn set_low(&mut self) -> bool {
-        self.sysfp.write_all(b"0").is_ok()
+    fn set_low(&mut self) -> io::Result<()> {
+        self.sysfp.write_all(b"0")
     }
 
     #[inline(always)]
-    fn set_high(&mut self) -> bool {
-        self.sysfp.write_all(b"1").is_ok()
+    fn set_high(&mut self) -> io::Result<()> {
+        self.sysfp.write_all(b"1")
     }
 }
