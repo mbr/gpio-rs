@@ -16,7 +16,7 @@
 pub mod sysfs;
 
 /// Value read from or written to a GPIO port.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum GpioValue {
     Low,
     High,
