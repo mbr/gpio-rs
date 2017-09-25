@@ -5,13 +5,14 @@
 
 use std::{fs, io};
 use std::io::Write;
-use super::GpioOut;
+use super::{GpioOut, GpioValue};
 
 /// `/sys`-fs based GPIO output
 #[derive(Debug)]
 pub struct SysFsGpioOutput {
     gpio_num: u16,
     sysfp: fs::File,
+    current_value: GpioValue,
 }
 
 impl SysFsGpioOutput {
@@ -51,6 +52,7 @@ impl SysFsGpioOutput {
         Ok(SysFsGpioOutput {
                gpio_num: gpio_num,
                sysfp: sysfp,
+               current_value: GpioValue::Low,
            })
     }
 }
@@ -71,11 +73,19 @@ impl GpioOut for SysFsGpioOutput {
 
     #[inline(always)]
     fn set_low(&mut self) -> io::Result<()> {
-        self.sysfp.write_all(b"0")
+        if self.current_value == GpioValue::High {
+            self.sysfp.write_all(b"0")?;
+            self.current_value = GpioValue::Low;
+        }
+        Ok(())
     }
 
     #[inline(always)]
     fn set_high(&mut self) -> io::Result<()> {
-        self.sysfp.write_all(b"1")
+        if self.current_value == GpioValue::Low {
+            self.sysfp.write_all(b"1")?;
+            self.current_value = GpioValue::High;
+        }
+        Ok(())
     }
 }
