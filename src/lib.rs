@@ -43,6 +43,7 @@
 //!
 
 pub mod sysfs;
+pub mod dummy;
 
 /// A value read from or written to a GPIO port
 #[derive(Debug, Copy, Clone)]
