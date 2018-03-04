@@ -9,7 +9,7 @@
 //!
 //! ## Example
 //!
-//! The `DummyGpioIn` reads value from a callback:
+//! The `DummyGpioIn` reads values from a callback:
 //!
 //! ```rust
 //! use std::time;
