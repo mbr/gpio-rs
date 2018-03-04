@@ -2,7 +2,7 @@ Rust GPIO
 =========
 
 Deals with GPIO access on Linux and bare metal embedded systems, through sysfs
-and direct memory access. Planned to works on stable Rust 1.9.
+and direct memory access. Works on stable Rust.
 
 Roadmap
 -------
