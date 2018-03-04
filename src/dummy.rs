@@ -1,7 +1,49 @@
+//! GPIO dummy input/output
+//!
+//! The dummy module can be used instead of a GPIO implementation tied to
+//! hardware to run unit tests or otherwise provide means to test an
+//! application when no embedded device is around.
+//!
+//! It supports the same interface as other GPIOs and its input and output
+//! behaviour can be configured in a flexible manner.
+//!
+//! ## Example
+//!
+//! The `DummyGpioIn` reads value from a callback:
+//!
+//! ```rust
+//! use std::time;
+//! use gpio::{GpioIn, GpioValue};
+//! use gpio::dummy::DummyGpioIn;
+//!
+//! // a simple dummy gpio that is always `true`/`High`
+//! let mut dg = DummyGpioIn::new(|| true);
+//! assert_eq!(GpioValue::High, dg.read_value().unwrap());
+//!
+//! // another example that flips every second
+//! let mut timed_gpio = DummyGpioIn::new(|| {
+//!     std::time::SystemTime::now()
+//!         .duration_since(time::UNIX_EPOCH)
+//!         .unwrap()
+//!         .as_secs() % 2 == 0
+//! });
+//! println!("timed: {:?}", timed_gpio.read_value().unwrap());
+//! ```
+//!
+//! Output can simple be swallowed by a dummy output port:
+//!
+//! ```rust
+//! use gpio::{GpioOut};
+//! use gpio::dummy::DummyGpioOut;
+//!
+//! let mut dg = DummyGpioOut::new(|_| ());
+//! dg.set_value(true);
+//! ```
+
 use super::{GpioIn, GpioOut, GpioValue};
 
 #[derive(Debug)]
-struct DummyGpioIn<F> {
+pub struct DummyGpioIn<F> {
     value: F,
 }
 
@@ -11,20 +53,20 @@ impl<F> DummyGpioIn<F> {
     }
 }
 
-impl<V, F, E> GpioIn for DummyGpioIn<F>
+impl<V, F> GpioIn for DummyGpioIn<F>
 where
     V: Into<GpioValue>,
-    F: Fn() -> Result<V, E>,
+    F: Fn() -> V,
 {
-    type Error = E;
+    type Error = ();
 
     fn read_value(&mut self) -> Result<GpioValue, Self::Error> {
-        (self.value)().map(|v| v.into())
+        Ok((self.value)().into())
     }
 }
 
 #[derive(Debug)]
-struct DummyGpioOut<F> {
+pub struct DummyGpioOut<F> {
     dest: F,
 }
 
@@ -34,17 +76,17 @@ impl<F> DummyGpioOut<F> {
     }
 }
 
-impl<F, E> GpioOut for DummyGpioOut<F>
+impl<F> GpioOut for DummyGpioOut<F>
 where
-    F: Fn(GpioValue) -> Result<(), E>,
+    F: Fn(GpioValue) -> (),
 {
-    type Error = E;
+    type Error = ();
 
     fn set_low(&mut self) -> Result<(), Self::Error> {
-        (self.dest)(GpioValue::Low)
+        Ok((self.dest)(GpioValue::Low))
     }
 
     fn set_high(&mut self) -> Result<(), Self::Error> {
-        (self.dest)(GpioValue::High)
+        Ok((self.dest)(GpioValue::High))
     }
 }
