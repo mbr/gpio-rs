@@ -1,7 +1,6 @@
 //! Linux `/sys`-fs based GPIO control
 //!
-//! Uses the [Linux GPIO Sysfs]
-//! (https://www.kernel.org/doc/Documentation/gpio/sysfs.txt) filesystem
+//! Uses the [Linux GPIO Sysfs](https://www.kernel.org/doc/Documentation/gpio/sysfs.txt) filesystem
 //! operations to control GPIO ports. It tries to reduce the otherwise hefty syscall overhead
 //! by keeping the sysfs files open, instead of reopening them on each read.
 //!

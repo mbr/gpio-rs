@@ -8,9 +8,9 @@
 //! traits. All backends implement at least some of these traits, making them
 //! interchangeable, e.g. for testing.
 //!
-//! The most commonly used implementation is based on the [Linux GPIO Sysfs]
-//! (https://www.kernel.org/doc/Documentation/gpio/sysfs.txt) interface, found
-//! inside the `sysfs` crate.
+//! The most commonly used implementation is based on the
+//! [Linux GPIO Sysfs](https://www.kernel.org/doc/Documentation/gpio/sysfs.txt)
+//! interface, found inside the `sysfs` crate.
 //!
 //! ### TODO
 //!
