@@ -47,7 +47,9 @@ pub mod sysfs;
 /// A value read from or written to a GPIO port
 #[derive(Debug, Copy, Clone)]
 pub enum GpioValue {
+    /// A low value, usually 0 V
     Low,
+    /// A high value, commonly 3.3V or 5V
     High,
 }
 
