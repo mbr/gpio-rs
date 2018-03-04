@@ -42,12 +42,14 @@
 
 use super::{GpioIn, GpioOut, GpioValue};
 
+/// Dummy GPIO input pin
 #[derive(Debug)]
 pub struct DummyGpioIn<F> {
     value: F,
 }
 
 impl<F> DummyGpioIn<F> {
+    /// Create new dummy pin that returns the value of `value` every it is read
     pub fn new(value: F) -> DummyGpioIn<F> {
         DummyGpioIn { value }
     }
@@ -65,12 +67,14 @@ where
     }
 }
 
+/// Dummy GPIO output pin
 #[derive(Debug)]
 pub struct DummyGpioOut<F> {
     dest: F,
 }
 
 impl<F> DummyGpioOut<F> {
+    /// Creates a new dummy pin that passes all set values to `dest`.
     pub fn new(dest: F) -> DummyGpioOut<F> {
         DummyGpioOut { dest }
     }
