@@ -10,7 +10,6 @@
 //!
 //! ### TODO
 //!
-//! * `GpioInput` trait
 //! * `/dev/mem` interface
 
 pub mod sysfs;
@@ -24,7 +23,11 @@ pub enum GpioValue {
 
 impl From<bool> for GpioValue {
     fn from(val: bool) -> GpioValue {
-        if val { GpioValue::High } else { GpioValue::Low }
+        if val {
+            GpioValue::High
+        } else {
+            GpioValue::Low
+        }
     }
 }
 
@@ -38,7 +41,7 @@ impl From<u8> for GpioValue {
     }
 }
 
-/// Support sending `GPIOValue`s
+/// Supports sending `GPIOValue`s
 pub trait GpioOut {
     type Error;
 
@@ -55,4 +58,11 @@ pub trait GpioOut {
 
     #[inline(always)]
     fn set_high(&mut self) -> Result<(), Self::Error>;
+}
+
+/// Supports reading `GPIOValue`s
+pub trait GpioIn {
+    type Error;
+
+    fn read_value(&mut self) -> Result<GpioValue, Self::Error>;
 }

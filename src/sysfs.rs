@@ -4,65 +4,99 @@
 //! devices running Linux), but incurs quite a bit of syscall overhead.
 
 use std::{fs, io};
-use std::io::Write;
-use super::GpioOut;
+use std::io::{Read, Write};
+use super::{GpioIn, GpioOut, GpioValue};
 
-/// `/sys`-fs based GPIO output
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum GpioDirection {
+    Input,
+    Output,
+}
+
+fn export_gpio_if_unexported(gpio_num: u16) -> io::Result<()> {
+    // export port first if not exported
+    if let Err(_) = fs::metadata(&format!("/sys/class/gpio/gpio{}", gpio_num)) {
+        let mut export_fp = fs::File::create("/sys/class/gpio/export")?;
+        write!(export_fp, "{}", gpio_num)?;
+    }
+
+    // ensure we're using '0' as low
+    fs::File::create(format!("/sys/class/gpio/gpio{}/active_low", gpio_num))?.write_all(b"0")
+}
+
+fn set_gpio_direction(gpio_num: u16, direction: GpioDirection) -> io::Result<()> {
+    fs::File::create(format!("/sys/class/gpio/gpio{}/direction", gpio_num))?.write_all(
+        match direction {
+            GpioDirection::Input => b"in",
+            GpioDirection::Output => b"out",
+        },
+    )
+}
+
+fn open_gpio(gpio_num: u16, direction: GpioDirection) -> io::Result<fs::File> {
+    fs::File::create(format!("/sys/class/gpio/gpio{}/value", gpio_num))
+}
+
 #[derive(Debug)]
-pub struct SysFsGpioOutput {
+struct SysFsGpio {
     gpio_num: u16,
     sysfp: fs::File,
 }
 
-impl SysFsGpioOutput {
-    /// Open a GPIO port for Output.
-    ///
-    /// Will export the port if necessary.
-    /// The port will be set to output mode. Note that the port will be
-    /// unexported once the `SysFsGpioOutput` is dropped.
-    ///
-    /// A single file will be kept to avoid having to reopen the port every
-    /// time the output changes.
-    pub fn new(gpio_num: u16) -> io::Result<SysFsGpioOutput> {
-        // export port first if not exported
-        if let Err(_) = fs::metadata(&format!("/sys/class/gpio/gpio{}", gpio_num)) {
-            let mut export_fp = fs::File::create("/sys/class/gpio/export")?;
-            write!(export_fp, "{}", gpio_num)?;
-        }
+impl SysFsGpio {
+    fn open(gpio_num: u16, direction: GpioDirection) -> io::Result<SysFsGpio> {
+        export_gpio_if_unexported(gpio_num)?;
 
-        // ensure we're using '0' as low
-        fs::File::create(format!("/sys/class/gpio/gpio{}/active_low", gpio_num))?
-            .write_all(b"0")?;
+        // ensure we're using '0' as low.
+        // FIXME: this should be configurable
+        fs::File::create(format!("/sys/class/gpio/gpio{}/active_low", gpio_num))?.write_all(b"0")?;
 
-        // continue with initialization
-        Self::exported_new(gpio_num)
+        set_gpio_direction(gpio_num, direction)?;
+
+        // finally, we can open the device
+        Ok(SysFsGpio {
+            gpio_num,
+            sysfp: open_gpio(gpio_num, direction)?,
+        })
     }
 
-    /// Open an already exported GPIO port.
-    /// Like `new`, but does not export the port.
-    pub fn exported_new(gpio_num: u16) -> io::Result<SysFsGpioOutput> {
-        /// set to output direction
-        fs::File::create(format!("/sys/class/gpio/gpio{}/direction", gpio_num))?
-            .write_all(b"out")?;
+    fn set_direction(&mut self, direction: GpioDirection) -> io::Result<()> {
+        set_gpio_direction(self.gpio_num, direction)?;
+        self.sysfp = open_gpio(self.gpio_num, direction)?;
 
-        // store open file handle
-        let sysfp = fs::File::create(format!("/sys/class/gpio/gpio{}/value", gpio_num))?;
-
-        Ok(SysFsGpioOutput {
-               gpio_num: gpio_num,
-               sysfp: sysfp,
-           })
+        Ok(())
     }
 }
 
-impl Drop for SysFsGpioOutput {
+impl Drop for SysFsGpio {
     fn drop(&mut self) {
+        // unexport the pin, if we have not done so already
+        // best effort, failures are ignored
         let unexport_fp = fs::File::create("/sys/class/gpio/unexport");
 
         if let Ok(mut fp) = unexport_fp {
-            // best effort
             write!(fp, "{}\n", self.gpio_num).ok();
         }
+    }
+}
+
+/// `/sys`-fs based GPIO output
+#[derive(Debug)]
+pub struct SysFsGpioOutput {
+    gpio: SysFsGpio,
+}
+
+impl SysFsGpioOutput {
+    /// Open a GPIO port for Output.
+    pub fn open(gpio_num: u16) -> io::Result<SysFsGpioOutput> {
+        Ok(SysFsGpioOutput {
+            gpio: SysFsGpio::open(gpio_num, GpioDirection::Output)?,
+        })
+    }
+
+    pub fn into_input(mut self) -> io::Result<SysFsGpioInput> {
+        self.gpio.set_direction(GpioDirection::Input)?;
+        Ok(SysFsGpioInput { gpio: self.gpio })
     }
 }
 
@@ -71,11 +105,49 @@ impl GpioOut for SysFsGpioOutput {
 
     #[inline(always)]
     fn set_low(&mut self) -> io::Result<()> {
-        self.sysfp.write_all(b"0")
+        self.gpio.sysfp.write_all(b"0")
     }
 
     #[inline(always)]
     fn set_high(&mut self) -> io::Result<()> {
-        self.sysfp.write_all(b"1")
+        self.gpio.sysfp.write_all(b"1")
+    }
+}
+
+/// `/sys`-fs based GPIO output
+#[derive(Debug)]
+pub struct SysFsGpioInput {
+    gpio: SysFsGpio,
+}
+
+impl SysFsGpioInput {
+    /// Open a GPIO port for Output.
+    pub fn open(gpio_num: u16) -> io::Result<SysFsGpioInput> {
+        Ok(SysFsGpioInput {
+            gpio: SysFsGpio::open(gpio_num, GpioDirection::Input)?,
+        })
+    }
+
+    pub fn into_output(mut self) -> io::Result<SysFsGpioOutput> {
+        self.gpio.set_direction(GpioDirection::Output)?;
+        Ok(SysFsGpioOutput { gpio: self.gpio })
+    }
+}
+
+impl GpioIn for SysFsGpioInput {
+    type Error = io::Error;
+
+    fn read_value(&mut self) -> Result<GpioValue, Self::Error> {
+        let mut buf: [u8; 1] = [0];
+        self.gpio.sysfp.read_exact(&mut buf)?;
+
+        match buf[0] {
+            b'0' => Ok(GpioValue::Low),
+            b'1' => Ok(GpioValue::High),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "read a value that was neither a '0' nor a '1' from Linux sysfs GPIO interface",
+            )),
+        }
     }
 }
