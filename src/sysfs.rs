@@ -34,7 +34,12 @@ fn set_gpio_direction(gpio_num: u16, direction: GpioDirection) -> io::Result<()>
 }
 
 fn open_gpio(gpio_num: u16, direction: GpioDirection) -> io::Result<fs::File> {
-    fs::File::create(format!("/sys/class/gpio/gpio{}/value", gpio_num))
+    let p = format!("/sys/class/gpio/gpio{}/value", gpio_num);
+
+    match direction {
+        GpioDirection::Input => fs::File::open(p),
+        GpioDirection::Output => fs::File::create(p),
+    }
 }
 
 #[derive(Debug)]
