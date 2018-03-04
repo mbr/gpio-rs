@@ -73,6 +73,7 @@ impl From<u8> for GpioValue {
 
 /// Supports sending `GPIOValue`s
 pub trait GpioOut {
+    /// Errors that can occur during initialization of or writing to GPIO
     type Error;
 
     /// Sets the output value of the GPIO port
@@ -95,6 +96,7 @@ pub trait GpioOut {
 
 /// Supports reading `GPIOValue`s
 pub trait GpioIn {
+    /// Errors that can occur during initialization of or reading from GPIO
     type Error;
 
     /// Perform a single reading of a GPIO port
