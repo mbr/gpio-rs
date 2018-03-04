@@ -1,7 +1,12 @@
 //! Linux `/sys`-fs based GPIO control
 //!
-//! Uses filesystem operations to control GPIO ports. Very portable (across
-//! devices running Linux), but incurs quite a bit of syscall overhead.
+//! Uses the [Linux GPIO Sysfs]
+//! (https://www.kernel.org/doc/Documentation/gpio/sysfs.txt) filesystem
+//! operations to control GPIO ports. It tries to reduce the otherwise hefty syscall overhead
+//! by keeping the sysfs files open, instead of reopening them on each read.
+//!
+//! Every `open` call to a GPIO pin will automatically export the necessary pin and unexport it
+//! on close.
 
 use std::{fs, io};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -13,6 +18,7 @@ enum GpioDirection {
     Output,
 }
 
+#[inline]
 fn export_gpio_if_unexported(gpio_num: u16) -> io::Result<()> {
     // export port first if not exported
     if let Err(_) = fs::metadata(&format!("/sys/class/gpio/gpio{}", gpio_num)) {
@@ -24,6 +30,7 @@ fn export_gpio_if_unexported(gpio_num: u16) -> io::Result<()> {
     fs::File::create(format!("/sys/class/gpio/gpio{}/active_low", gpio_num))?.write_all(b"0")
 }
 
+#[inline]
 fn set_gpio_direction(gpio_num: u16, direction: GpioDirection) -> io::Result<()> {
     fs::File::create(format!("/sys/class/gpio/gpio{}/direction", gpio_num))?.write_all(
         match direction {
@@ -33,6 +40,7 @@ fn set_gpio_direction(gpio_num: u16, direction: GpioDirection) -> io::Result<()>
     )
 }
 
+#[inline]
 fn open_gpio(gpio_num: u16, direction: GpioDirection) -> io::Result<fs::File> {
     let p = format!("/sys/class/gpio/gpio{}/value", gpio_num);
 
@@ -65,6 +73,7 @@ impl SysFsGpio {
         })
     }
 
+    #[inline]
     fn set_direction(&mut self, direction: GpioDirection) -> io::Result<()> {
         set_gpio_direction(self.gpio_num, direction)?;
         self.sysfp = open_gpio(self.gpio_num, direction)?;
@@ -74,6 +83,7 @@ impl SysFsGpio {
 }
 
 impl Drop for SysFsGpio {
+    #[inline]
     fn drop(&mut self) {
         // unexport the pin, if we have not done so already
         // best effort, failures are ignored
@@ -93,12 +103,14 @@ pub struct SysFsGpioOutput {
 
 impl SysFsGpioOutput {
     /// Open a GPIO port for Output.
+    #[inline]
     pub fn open(gpio_num: u16) -> io::Result<SysFsGpioOutput> {
         Ok(SysFsGpioOutput {
             gpio: SysFsGpio::open(gpio_num, GpioDirection::Output)?,
         })
     }
 
+    #[inline]
     pub fn into_input(mut self) -> io::Result<SysFsGpioInput> {
         self.gpio.set_direction(GpioDirection::Input)?;
         Ok(SysFsGpioInput { gpio: self.gpio })
@@ -108,12 +120,12 @@ impl SysFsGpioOutput {
 impl GpioOut for SysFsGpioOutput {
     type Error = io::Error;
 
-    #[inline(always)]
+    #[inline]
     fn set_low(&mut self) -> io::Result<()> {
         self.gpio.sysfp.write_all(b"0")
     }
 
-    #[inline(always)]
+    #[inline]
     fn set_high(&mut self) -> io::Result<()> {
         self.gpio.sysfp.write_all(b"1")
     }
@@ -127,12 +139,14 @@ pub struct SysFsGpioInput {
 
 impl SysFsGpioInput {
     /// Open a GPIO port for Output.
+    #[inline]
     pub fn open(gpio_num: u16) -> io::Result<SysFsGpioInput> {
         Ok(SysFsGpioInput {
             gpio: SysFsGpio::open(gpio_num, GpioDirection::Input)?,
         })
     }
 
+    #[inline]
     pub fn into_output(mut self) -> io::Result<SysFsGpioOutput> {
         self.gpio.set_direction(GpioDirection::Output)?;
         Ok(SysFsGpioOutput { gpio: self.gpio })
@@ -142,6 +156,7 @@ impl SysFsGpioInput {
 impl GpioIn for SysFsGpioInput {
     type Error = io::Error;
 
+    #[inline]
     fn read_value(&mut self) -> Result<GpioValue, Self::Error> {
         let mut buf: [u8; 1] = [0; 1];
 
