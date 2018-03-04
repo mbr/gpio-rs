@@ -8,10 +8,8 @@ Roadmap
 -------
 
 - [x] GPIO write support
-- [ ] Read support
+- [x] Read support
 - [ ] Interrupt support
-- [ ] Split to allow building without std
-- [ ] Compile using stable
 
 Other libraries
 ---------------
