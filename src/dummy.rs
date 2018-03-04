@@ -11,15 +11,15 @@ impl<F> DummyGpioIn<F> {
     }
 }
 
-impl<V, F> GpioIn for DummyGpioIn<F>
+impl<V, F, E> GpioIn for DummyGpioIn<F>
 where
     V: Into<GpioValue>,
-    F: Fn() -> V,
+    F: Fn() -> Result<V, E>,
 {
-    type Error = ();
+    type Error = E;
 
     fn read_value(&mut self) -> Result<GpioValue, Self::Error> {
-        Ok((self.value)().into())
+        (self.value)().map(|v| v.into())
     }
 }
 
@@ -28,24 +28,23 @@ struct DummyGpioOut<F> {
     dest: F,
 }
 
-// FIXME: support result
-
 impl<F> DummyGpioOut<F> {
     pub fn new(dest: F) -> DummyGpioOut<F> {
         DummyGpioOut { dest }
     }
 }
 
-impl<F: Fn(GpioValue)> GpioOut for DummyGpioOut<F> {
-    type Error = ();
+impl<F, E> GpioOut for DummyGpioOut<F>
+where
+    F: Fn(GpioValue) -> Result<(), E>,
+{
+    type Error = E;
 
     fn set_low(&mut self) -> Result<(), Self::Error> {
-        (self.dest)(GpioValue::Low);
-        Ok(())
+        (self.dest)(GpioValue::Low)
     }
 
     fn set_high(&mut self) -> Result<(), Self::Error> {
-        (self.dest)(GpioValue::High);
-        Ok(())
+        (self.dest)(GpioValue::High)
     }
 }
