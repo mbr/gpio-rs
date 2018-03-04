@@ -4,7 +4,7 @@
 //! devices running Linux), but incurs quite a bit of syscall overhead.
 
 use std::{fs, io};
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use super::{GpioIn, GpioOut, GpioValue};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -138,16 +138,24 @@ impl GpioIn for SysFsGpioInput {
     type Error = io::Error;
 
     fn read_value(&mut self) -> Result<GpioValue, Self::Error> {
-        let mut buf: [u8; 1] = [0];
+        let mut buf: [u8; 1] = [0; 1];
+
+        // we rewind the file descriptor first, otherwise read will fail
+        self.gpio.sysfp.seek(SeekFrom::Start(0))?;
+
+        // we read one byte, the trailing byte is a newline
         self.gpio.sysfp.read_exact(&mut buf)?;
 
         match buf[0] {
             b'0' => Ok(GpioValue::Low),
             b'1' => Ok(GpioValue::High),
-            _ => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "read a value that was neither a '0' nor a '1' from Linux sysfs GPIO interface",
-            )),
+            _ => {
+                println!("BUFFER: {:?}", buf);
+                Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "read a value that was neither a '0' nor a '1' from Linux sysfs GPIO interface",
+                ))
+            }
         }
     }
 }
