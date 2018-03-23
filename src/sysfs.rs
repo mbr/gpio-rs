@@ -7,9 +7,11 @@
 //! Every `open` call to a GPIO pin will automatically export the necessary pin and unexport it
 //! on close.
 
+use nix::sys::epoll::{self, EpollEvent, EpollFlags, EpollOp};
 use std::{fs, io};
 use std::io::{Read, Seek, SeekFrom, Write};
-use super::{GpioIn, GpioOut, GpioValue};
+use std::os::unix::io::{AsRawFd, RawFd};
+use super::{GpioEdge, GpioIn, GpioOut, GpioValue};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum GpioDirection {
@@ -112,7 +114,7 @@ impl SysFsGpioOutput {
     #[inline]
     pub fn into_input(mut self) -> io::Result<SysFsGpioInput> {
         self.gpio.set_direction(GpioDirection::Input)?;
-        Ok(SysFsGpioInput { gpio: self.gpio })
+        SysFsGpioInput::from_gpio(self.gpio)
     }
 }
 
@@ -134,15 +136,25 @@ impl GpioOut for SysFsGpioOutput {
 #[derive(Debug)]
 pub struct SysFsGpioInput {
     gpio: SysFsGpio,
+    epoll_fd: RawFd,
 }
 
 impl SysFsGpioInput {
     /// Open a GPIO port for Output.
     #[inline]
     pub fn open(gpio_num: u16) -> io::Result<SysFsGpioInput> {
-        Ok(SysFsGpioInput {
-            gpio: SysFsGpio::open(gpio_num, GpioDirection::Input)?,
-        })
+        Self::from_gpio(SysFsGpio::open(gpio_num, GpioDirection::Input)?)
+    }
+
+    #[inline]
+    fn from_gpio(gpio: SysFsGpio) -> io::Result<SysFsGpioInput> {
+        let dev_fd = gpio.sysfp.as_raw_fd();
+        let epoll_fd =
+            epoll::epoll_create().map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+        let mut event = EpollEvent::new(EpollFlags::EPOLLPRI | EpollFlags::EPOLLET, 0);
+        epoll::epoll_ctl(epoll_fd, EpollOp::EpollCtlAdd, dev_fd, &mut event)
+            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+        Ok(SysFsGpioInput { gpio, epoll_fd })
     }
 
     #[inline]
@@ -176,5 +188,30 @@ impl GpioIn for SysFsGpioInput {
                 ))
             }
         }
+    }
+
+    fn set_edge(&mut self, edge: GpioEdge) -> Result<(), Self::Error> {
+        fs::OpenOptions::new()
+            .write(true)
+            .open(format!("/sys/class/gpio/gpio{}/edge", self.gpio.gpio_num))?
+            .write_all(match edge {
+                GpioEdge::None => b"none",
+                GpioEdge::Rising => b"rising",
+                GpioEdge::Falling => b"falling",
+                GpioEdge::Both => b"both",
+            })?;
+        Ok(())
+    }
+
+    fn wait_for_edge(&mut self, timeout_ms: u64) -> Result<Option<GpioValue>, Self::Error> {
+        let _ = self.read_value()?;
+        let event = EpollEvent::new(EpollFlags::EPOLLPRI | EpollFlags::EPOLLET, 0);
+        let mut events: [EpollEvent; 1] = [event];
+        let cnt = epoll::epoll_wait(self.epoll_fd, &mut events, timeout_ms as isize)
+            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+        Ok(match cnt {
+            0 => None, // timeout
+            _ => Some(self.read_value()?),
+        })
     }
 }

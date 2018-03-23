@@ -40,18 +40,25 @@
 //! dg.set_value(true);
 //! ```
 
-use super::{GpioIn, GpioOut, GpioValue};
+use std::time;
+use super::{GpioEdge, GpioIn, GpioOut, GpioValue};
 
 /// Dummy GPIO input pin
 #[derive(Debug)]
 pub struct DummyGpioIn<F> {
     value: F,
+    prev_value: GpioValue,
+    edge: GpioEdge,
 }
 
 impl<F> DummyGpioIn<F> {
     /// Create new dummy pin that returns the value of `value` every it is read
     pub fn new(value: F) -> DummyGpioIn<F> {
-        DummyGpioIn { value }
+        DummyGpioIn {
+            value,
+            prev_value: GpioValue::Low,
+            edge: GpioEdge::None,
+        }
     }
 }
 
@@ -64,6 +71,34 @@ where
 
     fn read_value(&mut self) -> Result<GpioValue, Self::Error> {
         Ok((self.value)().into())
+    }
+
+    fn set_edge(&mut self, edge: GpioEdge) -> Result<(), Self::Error> {
+        self.edge = edge;
+        Ok(())
+    }
+
+    fn wait_for_edge(&mut self, timeout_ms: u64) -> Result<Option<GpioValue>, Self::Error> {
+        let start = time::Instant::now();
+        loop {
+            let elapsed = start.elapsed();
+            if elapsed.as_secs() * 1000 + (elapsed.subsec_nanos() as u64) / 1_000_000 > timeout_ms {
+                return Ok(None); // timeout
+            }
+            let value = (self.value)().into();
+            if value == self.prev_value {
+                continue;
+            }
+            self.prev_value = value;
+            match (self.edge, value) {
+                (GpioEdge::Both, _)
+                | (GpioEdge::Rising, GpioValue::High)
+                | (GpioEdge::Falling, GpioValue::Low) => return Ok(Some(value)),
+                (GpioEdge::None, _)
+                | (GpioEdge::Rising, GpioValue::Low)
+                | (GpioEdge::Falling, GpioValue::High) => continue,
+            }
+        }
     }
 }
 
