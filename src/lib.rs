@@ -42,6 +42,8 @@
 //! * `/dev/mem` interface: Higher frequency port usage
 //!
 
+extern crate nix;
+
 pub mod sysfs;
 pub mod dummy;
 
@@ -52,6 +54,19 @@ pub enum GpioValue {
     Low,
     /// A high value, commonly 3.3V or 5V
     High,
+}
+
+/// A setting for signaling an interrupt.
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum GpioEdge {
+    /// No interrupt.
+    None,
+    /// Interrupt on rising edge, i.e. when going from 0 to 1.
+    Rising,
+    /// Interrupt on falling edge, i.e. when going from 1 to 0.
+    Falling,
+    /// Interrupt on both edges, i.e. whenever the value changes.
+    Both,
 }
 
 impl From<bool> for GpioValue {
@@ -104,4 +119,10 @@ pub trait GpioIn {
 
     /// Perform a single reading of a GPIO port
     fn read_value(&mut self) -> Result<GpioValue, Self::Error>;
+
+    /// Configure the criterion for signaling an interrupt.
+    fn set_edge(&mut self, edge: GpioEdge) -> Result<(), Self::Error>;
+
+    /// Wait for the value to change according to the configured edge, and return the new value.
+    fn wait_for_edge(&mut self, timeout_ms: u64) -> Result<Option<GpioValue>, Self::Error>;
 }
