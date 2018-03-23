@@ -6,3 +6,6 @@ license = "MIT"
 name = "gpio"
 repository = "https://github.com/mbr/gpio-rs"
 version = "0.4.1"
+
+[dependencies]
+nix = "0.10.0"
