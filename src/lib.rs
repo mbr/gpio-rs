@@ -12,7 +12,7 @@
 //! [Linux GPIO Sysfs](https://www.kernel.org/doc/Documentation/gpio/sysfs.txt)
 //! interface, found inside the `sysfs` crate.
 //!
-//! ## Example
+//! ## Example: writing and reading
 //!
 //! ```rust,no_run
 //! use gpio::{GpioIn, GpioOut};
@@ -34,6 +34,33 @@
 //! loop {
 //!     println!("GPIO23: {:?}", gpio23.read_value().unwrap());
 //!     thread::sleep(time::Duration::from_millis(100));
+//! }
+//! ```
+//!
+//! ## Example: waiting for falling edges
+//!
+//! ```rust,no_run
+//! use gpio::{GpioEdge, GpioIn, GpioOut};
+//! use std::{thread, time};
+//!
+//! let mut gpio17 = gpio::sysfs::SysFsGpioInput::open(17).unwrap();
+//! let mut gpio27 = gpio::sysfs::SysFsGpioOutput::open(27).unwrap();
+//!
+//! // GPIO27 will be toggled every second in the background by a different thread
+//! let mut value = false;
+//! thread::spawn(move || loop {
+//!     gpio27.set_value(value).expect("could not set gpio27");
+//!     println!("GPIO27 set to {:?}", value);
+//!     thread::sleep(time::Duration::from_millis(1000));
+//!     value = !value;
+//! });
+//!
+//! // GPIO17 waits for falling edges and displays the value
+//! loop {
+//!     gpio17
+//!         .set_edge(GpioEdge::Falling)
+//!         .expect("set edge on gpio17");
+//!     println!("GPIO17: {:?}", gpio17.wait_for_edge(5000).unwrap());
 //! }
 //! ```
 //!
