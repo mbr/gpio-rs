@@ -8,7 +8,7 @@
 //! on close.
 
 use nix::sys::epoll::{self, EpollEvent, EpollFlags, EpollOp};
-use std::{fs, io};
+use std::{cell, fs, io, isize};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::io::{AsRawFd, RawFd};
 use super::{GpioEdge, GpioIn, GpioOut, GpioValue};
@@ -22,23 +22,23 @@ enum GpioDirection {
 #[inline]
 fn export_gpio_if_unexported(gpio_num: u16) -> io::Result<()> {
     // export port first if not exported
-    if let Err(_) = fs::metadata(&format!("/sys/class/gpio/gpio{}", gpio_num)) {
+    if fs::metadata(&format!("/sys/class/gpio/gpio{}", gpio_num)).is_err() {
         let mut export_fp = fs::File::create("/sys/class/gpio/export")?;
         write!(export_fp, "{}", gpio_num)?;
     }
 
     // ensure we're using '0' as low
-    fs::File::create(format!("/sys/class/gpio/gpio{}/active_low", gpio_num))?.write_all(b"0")
+    fs::File::create(format!("/sys/class/gpio/gpio{}/active_low", gpio_num))?
+        .write_all(b"0")
 }
 
 #[inline]
 fn set_gpio_direction(gpio_num: u16, direction: GpioDirection) -> io::Result<()> {
-    fs::File::create(format!("/sys/class/gpio/gpio{}/direction", gpio_num))?.write_all(
-        match direction {
+    fs::File::create(format!("/sys/class/gpio/gpio{}/direction", gpio_num))?
+        .write_all(match direction {
             GpioDirection::Input => b"in",
             GpioDirection::Output => b"out",
-        },
-    )
+        })
 }
 
 #[inline]
@@ -54,7 +54,7 @@ fn open_gpio(gpio_num: u16, direction: GpioDirection) -> io::Result<fs::File> {
 #[derive(Debug)]
 struct SysFsGpio {
     gpio_num: u16,
-    sysfp: fs::File,
+    sysfp: cell::RefCell<fs::File>,
 }
 
 impl SysFsGpio {
@@ -63,21 +63,22 @@ impl SysFsGpio {
 
         // ensure we're using '0' as low.
         // FIXME: this should be configurable
-        fs::File::create(format!("/sys/class/gpio/gpio{}/active_low", gpio_num))?.write_all(b"0")?;
+        fs::File::create(format!("/sys/class/gpio/gpio{}/active_low", gpio_num))?
+            .write_all(b"0")?;
 
         set_gpio_direction(gpio_num, direction)?;
 
         // finally, we can open the device
         Ok(SysFsGpio {
             gpio_num,
-            sysfp: open_gpio(gpio_num, direction)?,
+            sysfp: cell::RefCell::new(open_gpio(gpio_num, direction)?),
         })
     }
 
     #[inline]
     fn set_direction(&mut self, direction: GpioDirection) -> io::Result<()> {
         set_gpio_direction(self.gpio_num, direction)?;
-        self.sysfp = open_gpio(self.gpio_num, direction)?;
+        self.sysfp = cell::RefCell::new(open_gpio(self.gpio_num, direction)?);
 
         Ok(())
     }
@@ -116,19 +117,24 @@ impl SysFsGpioOutput {
         self.gpio.set_direction(GpioDirection::Input)?;
         SysFsGpioInput::from_gpio(self.gpio)
     }
+
+    #[inline]
+    pub fn gpio_num(&self) -> u16 {
+        self.gpio.gpio_num
+    }
 }
 
 impl GpioOut for SysFsGpioOutput {
     type Error = io::Error;
 
     #[inline]
-    fn set_low(&mut self) -> io::Result<()> {
-        self.gpio.sysfp.write_all(b"0")
+    fn set_low(&self) -> io::Result<()> {
+        self.gpio.sysfp.borrow_mut().write_all(b"0")
     }
 
     #[inline]
-    fn set_high(&mut self) -> io::Result<()> {
-        self.gpio.sysfp.write_all(b"1")
+    fn set_high(&self) -> io::Result<()> {
+        self.gpio.sysfp.borrow_mut().write_all(b"1")
     }
 }
 
@@ -136,7 +142,6 @@ impl GpioOut for SysFsGpioOutput {
 #[derive(Debug)]
 pub struct SysFsGpioInput {
     gpio: SysFsGpio,
-    epoll_fd: RawFd,
 }
 
 impl SysFsGpioInput {
@@ -148,13 +153,7 @@ impl SysFsGpioInput {
 
     #[inline]
     fn from_gpio(gpio: SysFsGpio) -> io::Result<SysFsGpioInput> {
-        let dev_fd = gpio.sysfp.as_raw_fd();
-        let epoll_fd =
-            epoll::epoll_create().map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
-        let mut event = EpollEvent::new(EpollFlags::EPOLLPRI | EpollFlags::EPOLLET, 0);
-        epoll::epoll_ctl(epoll_fd, EpollOp::EpollCtlAdd, dev_fd, &mut event)
-            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
-        Ok(SysFsGpioInput { gpio, epoll_fd })
+        Ok(SysFsGpioInput { gpio })
     }
 
     #[inline]
@@ -162,20 +161,25 @@ impl SysFsGpioInput {
         self.gpio.set_direction(GpioDirection::Output)?;
         Ok(SysFsGpioOutput { gpio: self.gpio })
     }
+
+    #[inline]
+    pub fn gpio_num(&self) -> u16 {
+        self.gpio.gpio_num
+    }
 }
 
 impl GpioIn for SysFsGpioInput {
     type Error = io::Error;
 
     #[inline]
-    fn read_value(&mut self) -> Result<GpioValue, Self::Error> {
+    fn read_value(&self) -> Result<GpioValue, Self::Error> {
         let mut buf: [u8; 1] = [0; 1];
 
         // we rewind the file descriptor first, otherwise read will fail
-        self.gpio.sysfp.seek(SeekFrom::Start(0))?;
+        self.gpio.sysfp.borrow_mut().seek(SeekFrom::Start(0))?;
 
         // we read one byte, the trailing byte is a newline
-        self.gpio.sysfp.read_exact(&mut buf)?;
+        self.gpio.sysfp.borrow_mut().read_exact(&mut buf)?;
 
         match buf[0] {
             b'0' => Ok(GpioValue::Low),
@@ -202,16 +206,69 @@ impl GpioIn for SysFsGpioInput {
             })?;
         Ok(())
     }
+}
 
-    fn wait_for_edge(&mut self, timeout_ms: u64) -> Result<Option<GpioValue>, Self::Error> {
-        let _ = self.read_value()?;
-        let event = EpollEvent::new(EpollFlags::EPOLLPRI | EpollFlags::EPOLLET, 0);
-        let mut events: [EpollEvent; 1] = [event];
-        let cnt = epoll::epoll_wait(self.epoll_fd, &mut events, timeout_ms as isize)
-            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
-        Ok(match cnt {
-            0 => None, // timeout
-            _ => Some(self.read_value()?),
+pub struct SysFsGpioEdgeIter<'a> {
+    /// The timeout, if any.
+    timeout: Option<u64>,
+    /// The GPIO devices whose edges will be included in this iterator.
+    devs: Vec<&'a SysFsGpioInput>,
+    /// The file descriptor of the epoll instance.
+    epoll_fd: RawFd,
+}
+
+impl<'a> SysFsGpioEdgeIter<'a> {
+    pub fn new() -> Result<SysFsGpioEdgeIter<'a>, io::Error> {
+        let epoll_fd = epoll::epoll_create().map_err(|err| {
+            io::Error::new(io::ErrorKind::Other, err)
+        })?;
+        Ok(SysFsGpioEdgeIter {
+            timeout: None,
+            devs: Vec::new(),
+            epoll_fd,
         })
+    }
+
+    pub fn timeout_ms(&mut self, timeout_ms: u64) -> &mut Self {
+        self.timeout = Some(timeout_ms);
+        self
+    }
+
+    pub fn add(&mut self, dev: &'a SysFsGpioInput) -> Result<&mut Self, io::Error> {
+        // We use the device's index in the `devs` vector as the data registered with epoll.
+        let index = self.devs.len() as u64;
+        let flags = EpollFlags::EPOLLPRI | EpollFlags::EPOLLET;
+        let mut event = EpollEvent::new(flags, index);
+        let dev_fd = dev.gpio.sysfp.borrow().as_raw_fd();
+        epoll::epoll_ctl(self.epoll_fd, EpollOp::EpollCtlAdd, dev_fd, &mut event)
+            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+        self.devs.push(dev);
+        Ok(self)
+    }
+
+    fn get_next(&mut self) -> Result<&'a SysFsGpioInput, io::Error> {
+        let timeout = self.timeout.map_or(isize::MAX, |t| t as isize);
+        // A dummy event, to be overwritten by `epoll`.
+        let mut events = [EpollEvent::empty()];
+        let event_count = epoll::epoll_wait(self.epoll_fd, &mut events, timeout)
+            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+        if event_count == 0 {
+            return Err(io::Error::new(io::ErrorKind::Other, "timeout"));
+        }
+        // Epoll wrote the event data into the array. We used the device's index as the data:
+        self.devs
+            .get(events[0].data() as usize)
+            .map(|d| *d)
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::Other, "unexpected data value")
+            })
+    }
+}
+
+impl<'a> Iterator for SysFsGpioEdgeIter<'a> {
+    type Item = Result<&'a SysFsGpioInput, io::Error>;
+
+    fn next(&mut self) -> Option<Result<&'a SysFsGpioInput, io::Error>> {
+        Some(self.get_next())
     }
 }
