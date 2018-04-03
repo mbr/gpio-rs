@@ -40,64 +40,93 @@
 //! dg.set_value(true);
 //! ```
 
-use std::time;
+use std::{sync, thread, time};
 use super::{GpioEdge, GpioIn, GpioOut, GpioValue};
 
 /// Dummy GPIO input pin
-#[derive(Debug)]
-pub struct DummyGpioIn<F> {
-    value: F,
-    prev_value: GpioValue,
+#[derive(Clone)]
+pub struct DummyGpioIn {
+    value: sync::Arc<Fn() -> GpioValue>,
     edge: GpioEdge,
 }
 
-impl<F> DummyGpioIn<F> {
+impl DummyGpioIn {
     /// Create new dummy pin that returns the value of `value` every it is read
-    pub fn new(value: F) -> DummyGpioIn<F> {
+    pub fn new<F, V>(value: F) -> DummyGpioIn
+    where
+        V: Into<GpioValue>,
+        F: Fn() -> V + 'static,
+    {
         DummyGpioIn {
-            value,
-            prev_value: GpioValue::Low,
+            value: sync::Arc::new(move || value().into()),
             edge: GpioEdge::None,
         }
     }
 }
 
-impl<V, F> GpioIn for DummyGpioIn<F>
-where
-    V: Into<GpioValue>,
-    F: Fn() -> V,
-{
+impl GpioIn for DummyGpioIn {
     type Error = ();
 
-    fn read_value(&mut self) -> Result<GpioValue, Self::Error> {
-        Ok((self.value)().into())
+    fn read_value(&self) -> Result<GpioValue, Self::Error> {
+        Ok((self.value)())
     }
 
     fn set_edge(&mut self, edge: GpioEdge) -> Result<(), Self::Error> {
         self.edge = edge;
         Ok(())
     }
+}
 
-    fn wait_for_edge(&mut self, timeout_ms: u64) -> Result<Option<GpioValue>, Self::Error> {
+pub struct DummyEdgeIter<'a> {
+    timeout: Option<time::Duration>,
+    devs: Vec<(&'a DummyGpioIn, GpioValue)>,
+}
+
+impl<'a> DummyEdgeIter<'a> {
+    pub fn new() -> Result<DummyEdgeIter<'a>, ()> {
+        Ok(DummyEdgeIter {
+            timeout: None,
+            devs: Vec::new(),
+        })
+    }
+
+    pub fn timeout_ms(&mut self, timeout_ms: u64) -> &mut Self {
+        self.timeout = Some(time::Duration::from_millis(timeout_ms));
+        self
+    }
+
+    pub fn add(&mut self, dev: &'a DummyGpioIn) -> Result<&mut Self, ()> {
+        let val = dev.read_value()?;
+        self.devs.push((dev, val));
+        Ok(self)
+    }
+}
+
+impl<'a> Iterator for DummyEdgeIter<'a> {
+    type Item = Result<&'a DummyGpioIn, ()>;
+
+    fn next(&mut self) -> Option<Result<&'a DummyGpioIn, ()>> {
         let start = time::Instant::now();
         loop {
-            let elapsed = start.elapsed();
-            if elapsed.as_secs() * 1000 + (elapsed.subsec_nanos() as u64) / 1_000_000 > timeout_ms {
-                return Ok(None); // timeout
+            if self.timeout.map_or(false, |to| start.elapsed() > to) {
+                return Some(Err(()));
             }
-            let value = (self.value)().into();
-            if value == self.prev_value {
-                continue;
+            for &mut (gpio, ref mut val) in &mut self.devs {
+                let new_val = (gpio.value)();
+                if *val == new_val {
+                    continue;
+                }
+                *val = new_val;
+                match (gpio.edge, new_val) {
+                    (GpioEdge::Both, _) |
+                    (GpioEdge::Rising, GpioValue::High) |
+                    (GpioEdge::Falling, GpioValue::Low) => return Some(Ok(gpio)),
+                    (GpioEdge::None, _) |
+                    (GpioEdge::Rising, GpioValue::Low) |
+                    (GpioEdge::Falling, GpioValue::High) => (),
+                }
             }
-            self.prev_value = value;
-            match (self.edge, value) {
-                (GpioEdge::Both, _)
-                | (GpioEdge::Rising, GpioValue::High)
-                | (GpioEdge::Falling, GpioValue::Low) => return Ok(Some(value)),
-                (GpioEdge::None, _)
-                | (GpioEdge::Rising, GpioValue::Low)
-                | (GpioEdge::Falling, GpioValue::High) => continue,
-            }
+            thread::sleep(time::Duration::from_millis(1))
         }
     }
 }
@@ -121,11 +150,13 @@ where
 {
     type Error = ();
 
-    fn set_low(&mut self) -> Result<(), Self::Error> {
-        Ok((self.dest)(GpioValue::Low))
+    fn set_low(&self) -> Result<(), Self::Error> {
+        (self.dest)(GpioValue::Low);
+        Ok(())
     }
 
-    fn set_high(&mut self) -> Result<(), Self::Error> {
-        Ok((self.dest)(GpioValue::High))
+    fn set_high(&self) -> Result<(), Self::Error> {
+        (self.dest)(GpioValue::High);
+        Ok(())
     }
 }

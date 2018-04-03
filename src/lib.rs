@@ -19,7 +19,7 @@
 //! use std::{thread, time};
 //!
 //! // Let's open GPIO23 and -24, e.g. on a Raspberry Pi 2.
-//! let mut gpio23 = gpio::sysfs::SysFsGpioInput::open(23).unwrap();
+//! let gpio23 = gpio::sysfs::SysFsGpioInput::open(23).unwrap();
 //! let mut gpio24 = gpio::sysfs::SysFsGpioOutput::open(24).unwrap();
 //!
 //! // GPIO24 will be toggled every second in the background by a different thread
@@ -99,11 +99,7 @@ pub enum GpioEdge {
 impl From<bool> for GpioValue {
     #[inline]
     fn from(val: bool) -> GpioValue {
-        if val {
-            GpioValue::High
-        } else {
-            GpioValue::Low
-        }
+        if val { GpioValue::High } else { GpioValue::Low }
     }
 }
 
@@ -153,12 +149,10 @@ pub trait GpioOut {
     }
 
     /// Set the GPIO port to a low output value directly
-    #[inline(always)]
-    fn set_low(&mut self) -> Result<(), Self::Error>;
+    fn set_low(&self) -> Result<(), Self::Error>;
 
     /// Set the GPIO port to a high output value directly
-    #[inline(always)]
-    fn set_high(&mut self) -> Result<(), Self::Error>;
+    fn set_high(&self) -> Result<(), Self::Error>;
 }
 
 /// Supports reading `GPIOValue`s
@@ -167,11 +161,8 @@ pub trait GpioIn {
     type Error;
 
     /// Perform a single reading of a GPIO port
-    fn read_value(&mut self) -> Result<GpioValue, Self::Error>;
+    fn read_value(&self) -> Result<GpioValue, Self::Error>;
 
     /// Configure the criterion for signaling an interrupt.
     fn set_edge(&mut self, edge: GpioEdge) -> Result<(), Self::Error>;
-
-    /// Wait for the value to change according to the configured edge, and return the new value.
-    fn wait_for_edge(&mut self, timeout_ms: u64) -> Result<Option<GpioValue>, Self::Error>;
 }
