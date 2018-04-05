@@ -128,13 +128,13 @@ impl GpioOut for SysFsGpioOutput {
     type Error = io::Error;
 
     #[inline]
-    fn set_low(&self) -> io::Result<()> {
-        self.gpio.sysfp.borrow_mut().write_all(b"0")
+    fn set_low(&mut self) -> io::Result<()> {
+        self.gpio.sysfp.get_mut().write_all(b"0")
     }
 
     #[inline]
-    fn set_high(&self) -> io::Result<()> {
-        self.gpio.sysfp.borrow_mut().write_all(b"1")
+    fn set_high(&mut self) -> io::Result<()> {
+        self.gpio.sysfp.get_mut().write_all(b"1")
     }
 }
 
