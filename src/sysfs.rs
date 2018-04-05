@@ -7,6 +7,7 @@
 //! Every `open` call to a GPIO pin will automatically export the necessary pin and unexport it
 //! on close.
 
+use nix;
 use nix::sys::epoll::{self, EpollEvent, EpollFlags, EpollOp};
 use std::{cell, fs, io, isize};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -19,8 +20,41 @@ enum GpioDirection {
     Output,
 }
 
+quick_error! {
+    #[derive(Debug)]
+    pub enum GpioError {
+        Io(err: io::Error) {
+            from()
+            description("io error")
+            display("I/O error: {}", err)
+            cause(err)
+        }
+        Epoll(err: nix::Error) {
+            from()
+            description("epoll error")
+            display("Epoll error: {}", err)
+            cause(err)
+        }
+        EpollEventCount(count: usize) {
+            description("epoll_wait returned unexpected event count value")
+            display("epoll_wait returned unexpected event count value: {}", count)
+        }
+        EpollDataValue(val: u64) {
+            description("epoll_wait returned unexpected data value")
+            display("epoll_wait returned unexpected data value: {}", val)
+        }
+        InvalidData(val: u8) {
+            description("read a value that was neither '0' nor '1' from Linux sysfs GPIO interface")
+            display("read value {:?} from Linux sysfs GPIO interface, which is neither '0' nor '1'",
+                    val)
+        }
+    }
+}
+
+pub type GpioResult<T> = Result<T, GpioError>;
+
 #[inline]
-fn export_gpio_if_unexported(gpio_num: u16) -> io::Result<()> {
+fn export_gpio_if_unexported(gpio_num: u16) -> GpioResult<()> {
     // export port first if not exported
     if fs::metadata(&format!("/sys/class/gpio/gpio{}", gpio_num)).is_err() {
         let mut export_fp = fs::File::create("/sys/class/gpio/export")?;
@@ -29,26 +63,28 @@ fn export_gpio_if_unexported(gpio_num: u16) -> io::Result<()> {
 
     // ensure we're using '0' as low
     fs::File::create(format!("/sys/class/gpio/gpio{}/active_low", gpio_num))?
-        .write_all(b"0")
+        .write_all(b"0")?;
+    Ok(())
 }
 
 #[inline]
-fn set_gpio_direction(gpio_num: u16, direction: GpioDirection) -> io::Result<()> {
+fn set_gpio_direction(gpio_num: u16, direction: GpioDirection) -> GpioResult<()> {
     fs::File::create(format!("/sys/class/gpio/gpio{}/direction", gpio_num))?
         .write_all(match direction {
             GpioDirection::Input => b"in",
             GpioDirection::Output => b"out",
-        })
+        })?;
+    Ok(())
 }
 
 #[inline]
-fn open_gpio(gpio_num: u16, direction: GpioDirection) -> io::Result<fs::File> {
+fn open_gpio(gpio_num: u16, direction: GpioDirection) -> GpioResult<fs::File> {
     let p = format!("/sys/class/gpio/gpio{}/value", gpio_num);
 
-    match direction {
+    Ok(match direction {
         GpioDirection::Input => fs::File::open(p),
         GpioDirection::Output => fs::File::create(p),
-    }
+    }?)
 }
 
 #[derive(Debug)]
@@ -58,7 +94,7 @@ struct SysFsGpio {
 }
 
 impl SysFsGpio {
-    fn open(gpio_num: u16, direction: GpioDirection) -> io::Result<SysFsGpio> {
+    fn open(gpio_num: u16, direction: GpioDirection) -> GpioResult<SysFsGpio> {
         export_gpio_if_unexported(gpio_num)?;
 
         // ensure we're using '0' as low.
@@ -76,7 +112,7 @@ impl SysFsGpio {
     }
 
     #[inline]
-    fn set_direction(&mut self, direction: GpioDirection) -> io::Result<()> {
+    fn set_direction(&mut self, direction: GpioDirection) -> GpioResult<()> {
         set_gpio_direction(self.gpio_num, direction)?;
         self.sysfp = cell::RefCell::new(open_gpio(self.gpio_num, direction)?);
 
@@ -106,14 +142,14 @@ pub struct SysFsGpioOutput {
 impl SysFsGpioOutput {
     /// Open a GPIO port for Output.
     #[inline]
-    pub fn open(gpio_num: u16) -> io::Result<SysFsGpioOutput> {
+    pub fn open(gpio_num: u16) -> GpioResult<SysFsGpioOutput> {
         Ok(SysFsGpioOutput {
             gpio: SysFsGpio::open(gpio_num, GpioDirection::Output)?,
         })
     }
 
     #[inline]
-    pub fn into_input(mut self) -> io::Result<SysFsGpioInput> {
+    pub fn into_input(mut self) -> GpioResult<SysFsGpioInput> {
         self.gpio.set_direction(GpioDirection::Input)?;
         SysFsGpioInput::from_gpio(self.gpio)
     }
@@ -125,16 +161,18 @@ impl SysFsGpioOutput {
 }
 
 impl GpioOut for SysFsGpioOutput {
-    type Error = io::Error;
+    type Error = GpioError;
 
     #[inline]
-    fn set_low(&mut self) -> io::Result<()> {
-        self.gpio.sysfp.get_mut().write_all(b"0")
+    fn set_low(&mut self) -> GpioResult<()> {
+        self.gpio.sysfp.get_mut().write_all(b"0")?;
+        Ok(())
     }
 
     #[inline]
-    fn set_high(&mut self) -> io::Result<()> {
-        self.gpio.sysfp.get_mut().write_all(b"1")
+    fn set_high(&mut self) -> GpioResult<()> {
+        self.gpio.sysfp.get_mut().write_all(b"1")?;
+        Ok(())
     }
 }
 
@@ -147,17 +185,17 @@ pub struct SysFsGpioInput {
 impl SysFsGpioInput {
     /// Open a GPIO port for Output.
     #[inline]
-    pub fn open(gpio_num: u16) -> io::Result<SysFsGpioInput> {
+    pub fn open(gpio_num: u16) -> GpioResult<SysFsGpioInput> {
         Self::from_gpio(SysFsGpio::open(gpio_num, GpioDirection::Input)?)
     }
 
     #[inline]
-    fn from_gpio(gpio: SysFsGpio) -> io::Result<SysFsGpioInput> {
+    fn from_gpio(gpio: SysFsGpio) -> GpioResult<SysFsGpioInput> {
         Ok(SysFsGpioInput { gpio })
     }
 
     #[inline]
-    pub fn into_output(mut self) -> io::Result<SysFsGpioOutput> {
+    pub fn into_output(mut self) -> GpioResult<SysFsGpioOutput> {
         self.gpio.set_direction(GpioDirection::Output)?;
         Ok(SysFsGpioOutput { gpio: self.gpio })
     }
@@ -169,7 +207,7 @@ impl SysFsGpioInput {
 }
 
 impl GpioIn for SysFsGpioInput {
-    type Error = io::Error;
+    type Error = GpioError;
 
     #[inline]
     fn read_value(&self) -> Result<GpioValue, Self::Error> {
@@ -184,12 +222,9 @@ impl GpioIn for SysFsGpioInput {
         match buf[0] {
             b'0' => Ok(GpioValue::Low),
             b'1' => Ok(GpioValue::High),
-            _ => {
+            val => {
                 println!("BUFFER: {:?}", buf);
-                Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "read a value that was neither a '0' nor a '1' from Linux sysfs GPIO interface",
-                ))
+                Err(GpioError::InvalidData(val))
             }
         }
     }
@@ -218,10 +253,8 @@ pub struct SysFsGpioEdgeIter<'a> {
 }
 
 impl<'a> SysFsGpioEdgeIter<'a> {
-    pub fn new() -> Result<SysFsGpioEdgeIter<'a>, io::Error> {
-        let epoll_fd = epoll::epoll_create().map_err(|err| {
-            io::Error::new(io::ErrorKind::Other, err)
-        })?;
+    pub fn new() -> GpioResult<SysFsGpioEdgeIter<'a>> {
+        let epoll_fd = epoll::epoll_create()?;
         Ok(SysFsGpioEdgeIter {
             timeout: None,
             devs: Vec::new(),
@@ -234,41 +267,37 @@ impl<'a> SysFsGpioEdgeIter<'a> {
         self
     }
 
-    pub fn add(&mut self, dev: &'a SysFsGpioInput) -> Result<&mut Self, io::Error> {
+    pub fn add(&mut self, dev: &'a SysFsGpioInput) -> GpioResult<&mut Self> {
         // We use the device's index in the `devs` vector as the data registered with epoll.
         let index = self.devs.len() as u64;
         let flags = EpollFlags::EPOLLPRI | EpollFlags::EPOLLET;
         let mut event = EpollEvent::new(flags, index);
         let dev_fd = dev.gpio.sysfp.borrow().as_raw_fd();
-        epoll::epoll_ctl(self.epoll_fd, EpollOp::EpollCtlAdd, dev_fd, &mut event)
-            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+        epoll::epoll_ctl(self.epoll_fd, EpollOp::EpollCtlAdd, dev_fd, &mut event)?;
         self.devs.push(dev);
         Ok(self)
     }
 
-    fn get_next(&mut self) -> Result<&'a SysFsGpioInput, io::Error> {
+    fn get_next(&mut self) -> GpioResult<&'a SysFsGpioInput> {
         let timeout = self.timeout.map_or(isize::MAX, |t| t as isize);
         // A dummy event, to be overwritten by `epoll`.
         let mut events = [EpollEvent::empty()];
-        let event_count = epoll::epoll_wait(self.epoll_fd, &mut events, timeout)
-            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
-        if event_count == 0 {
-            return Err(io::Error::new(io::ErrorKind::Other, "timeout"));
+        let event_count = epoll::epoll_wait(self.epoll_fd, &mut events, timeout)?;
+        if event_count != 1 {
+            return Err(GpioError::EpollEventCount(event_count));
         }
         // Epoll wrote the event data into the array. We used the device's index as the data:
         self.devs
             .get(events[0].data() as usize)
             .map(|d| *d)
-            .ok_or_else(|| {
-                io::Error::new(io::ErrorKind::Other, "unexpected data value")
-            })
+            .ok_or_else(|| GpioError::EpollDataValue(events[0].data()))
     }
 }
 
 impl<'a> Iterator for SysFsGpioEdgeIter<'a> {
-    type Item = Result<&'a SysFsGpioInput, io::Error>;
+    type Item = GpioResult<&'a SysFsGpioInput>;
 
-    fn next(&mut self) -> Option<Result<&'a SysFsGpioInput, io::Error>> {
+    fn next(&mut self) -> Option<GpioResult<&'a SysFsGpioInput>> {
         Some(self.get_next())
     }
 }
