@@ -74,6 +74,8 @@
 //!
 
 extern crate nix;
+#[macro_use]
+extern crate quick_error;
 
 pub mod sysfs;
 pub mod dummy;
