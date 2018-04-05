@@ -150,12 +150,12 @@ where
 {
     type Error = ();
 
-    fn set_low(&self) -> Result<(), Self::Error> {
+    fn set_low(&mut self) -> Result<(), Self::Error> {
         (self.dest)(GpioValue::Low);
         Ok(())
     }
 
-    fn set_high(&self) -> Result<(), Self::Error> {
+    fn set_high(&mut self) -> Result<(), Self::Error> {
         (self.dest)(GpioValue::High);
         Ok(())
     }

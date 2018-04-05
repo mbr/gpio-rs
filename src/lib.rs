@@ -56,11 +56,15 @@
 //! });
 //!
 //! // GPIO17 waits for falling edges and displays the value
-//! loop {
-//!     gpio17
-//!         .set_edge(GpioEdge::Falling)
-//!         .expect("set edge on gpio17");
-//!     println!("GPIO17: {:?}", gpio17.wait_for_edge(5000).unwrap());
+//! gpio17
+//!     .set_edge(GpioEdge::Falling)
+//!     .expect("set edge on gpio17");
+//! for result in gpio::sysfs::SysFsGpioEdgeIter::new()
+//!     .expect("create iterator")
+//!     .add(&gpio17)
+//!     .expect("add gpio 17 to iter")
+//! {
+//!     println!("GPIO17: {:?}", result.unwrap().gpio_num());
 //! }
 //! ```
 //!
@@ -149,10 +153,10 @@ pub trait GpioOut {
     }
 
     /// Set the GPIO port to a low output value directly
-    fn set_low(&self) -> Result<(), Self::Error>;
+    fn set_low(&mut self) -> Result<(), Self::Error>;
 
     /// Set the GPIO port to a high output value directly
-    fn set_high(&self) -> Result<(), Self::Error>;
+    fn set_high(&mut self) -> Result<(), Self::Error>;
 }
 
 /// Supports reading `GPIOValue`s
