@@ -103,17 +103,39 @@ pub enum GpioEdge {
 }
 
 impl From<bool> for GpioValue {
+    #[inline]
     fn from(val: bool) -> GpioValue {
         if val { GpioValue::High } else { GpioValue::Low }
     }
 }
 
 impl From<u8> for GpioValue {
+    #[inline]
     fn from(val: u8) -> GpioValue {
         if val != 0 {
             GpioValue::High
         } else {
             GpioValue::Low
+        }
+    }
+}
+
+impl From<GpioValue> for bool {
+    #[inline]
+    fn from(val: GpioValue) -> bool {
+        match val {
+            GpioValue::Low => false,
+            GpioValue::High => true,
+        }
+    }
+}
+
+impl From<GpioValue> for u8 {
+    #[inline]
+    fn from(val: GpioValue) -> u8 {
+        match val {
+            GpioValue::Low => 0,
+            GpioValue::High => 1,
         }
     }
 }
